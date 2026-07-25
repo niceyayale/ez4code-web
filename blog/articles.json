@@ -10,5 +10,18 @@
       "programming",
       "code-tools"
     ]
+  },
+  {
+    "title": "Sorting Dictionaries and Chaining Array Methods: Practical Python and JavaScript Patterns",
+    "slug": "sorting-dictionaries-and-chaining-array-methods-practical-py",
+    "date": "2026-07-25",
+    "description": "A deep comparison of dictionary sorting in Python and array method chaining in JavaScript, with real-world examples every developer encounters.",
+    "tags": [
+      "python",
+      "javascript",
+      "functional-programming",
+      "data-structures",
+      "code-snippets"
+    ]
   }
 ]
