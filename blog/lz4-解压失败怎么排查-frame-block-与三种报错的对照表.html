@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LZ4 解压失败怎么排查：Frame、Block 与三种报错的对照表 - Ez4Code - Programming Tools Platform</title>
+  <meta name="description" content="LZ4 解压失败怎么排查：Frame、Block 与三种报错的对照表">
+  <meta name="keywords" content="lz4, compression, reference">
+  <meta name="author" content="Ez4Code - Programming Tools Platform">
+  <meta property="og:title" content="LZ4 解压失败怎么排查：Frame、Block 与三种报错的对照表">
+  <meta property="og:description" content="Online programming tools and code learning platform for developers">
+  <meta property="og:url" content="https://niceyayale.github.io/ez4code-web/blog/lz4-解压失败怎么排查-frame-block-与三种报错的对照表.html">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-11-18">
+  <meta property="article:tag" content="lz4, compression, reference">
+  <link rel="canonical" href="https://niceyayale.github.io/ez4code-web/blog/lz4-解压失败怎么排查-frame-block-与三种报错的对照表.html">
+  <link rel="alternate" hreflang="en" href="https://niceyayale.github.io/ez4code-web/blog/lz4-解压失败怎么排查-frame-block-与三种报错的对照表.html">
+  <link rel="stylesheet" href="https://niceyayale.github.io/ez4code-web/assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="https://niceyayale.github.io/ez4code-web/" class="logo">Ez4Code - Programming Tools Platform</a>
+      <nav>
+        <a href="https://ez4code.com">Website</a>
+        <a href="https://niceyayale.github.io/ez4code-web/blog/">Blog</a>
+        <a href="https://github.com/niceyayale/ez4code-web">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container article-page">
+    <article>
+      <h1 class="article-title">LZ4 解压失败怎么排查：Frame、Block 与三种报错的对照表</h1>
+      <div class="article-meta">
+        <time datetime="2026-11-18">2026-11-18</time>
+        <span class="tag">lz4</span><span class="tag">compression</span><span class="tag">reference</span>
+      </div>
+      <div class="article-content">
+        <h1>LZ4 解压失败怎么排查：Frame、Block 与三种报错的对照表</h1>
+<p>同事丢来一个 .lz4 文件，LZ4 解压时双击没反应，7-Zip 打开报「不支持的压缩方法」，命令行 lz4 又提示 magic number 不对。这类问题九成不是文件坏了，而是解压工具假设了错误的格式层次。LZ4 有两种合法封装（frame 与 raw block），还允许在文件里混入可跳过的附加段，认错一层就会报错。下面把三种最常见报错和对应处理写清楚。</p>
+<h2>一、先认清两层格式</h2>
+<p>| 层次 | 起始标识 | 典型来源 | 能否直接解压 |</p>
+<p>|---|---|---|---|</p>
+<p>| LZ4 Frame | 4 字节 magic <code>04 22 4D 18</code> | lz4 CLI、多数归档工具 | 可以，按 frame 解析 |</p>
+<p>| LZ4 Raw Block | 无 magic，直接是数据 | 应用内嵌压缩（如部分数据库/游戏资源） | 不可以，需要块大小与解压后长度 |</p>
+<p>| Skippable Frame | magic <code>50 2A 4D 18</code> + 4 字节长度 | 允许工具附加元数据 | 跳过该段继续解 |</p>
+<p>Frame 格式由 LZ4 官方规范定义（github.com/lz4/lz4 的 doc/lz4_Frame_format.md），头部包含版本、块独立性标志、最大块大小与可选的 content size、字典 ID、校验和。raw block 没有任何自描述信息，必须由调用方告知每块压缩后与解压后的长度。</p>
+<h2>二、LZ4 解压的三种报错与处理</h2>
+<h3>1. Error 66: Unsupported frame descriptor</h3>
+<p>多半是文件其实是 raw block，或被别的容器包了一层（例如 .tar.lz4 里又是 .lz4）。处理顺序：先用 <code>xxd -l 8 file.lz4</code> 看前四字节——不是 <code>04 22 4d 18</code> 就不要用 frame 解析器。</p>
+<pre><code class="language-bash">xxd -l 8 sample.lz4
+# 0422 4d18 64 70  b0 03   ← frame，正常
+# 1f8b 0800 ...            ← gzip，扩展名骗人</code></pre>
+<h3>2. Decoded size mismatch / 解压后截断</h3>
+<p>Frame 里 content size 是可选字段。缺失时解压器只能靠流结束标志判断，遇到被截断的文件就会不报错但少数据。校验方式：解压后比对 sha256，或让工具输出实际字节数再与来源核对。LZ4 frame 默认带 block checksum 时能发现单块损坏，但整文件级完整性仍要靠外层哈希。</p>
+<h3>3. .tar.lz4 被当成单个文件解</h3>
+<p><code>.tar.lz4</code> 是先 tar 再 lz4，正确顺序是 <code>lz4 -d x.tar.lz4 | tar -xf -</code>。直接对 .tar.lz4 解压只得到 tar 流，看不到目录结构，这是最常见的误判。</p>
+<h2>三、块大小与参数：为什么同一条命令在两台机器结果不同</h2>
+<p>lz4 命令行 1.9.x 默认最大块大小 4 MB，<code>-B4</code>～<code>-B7</code> 分别对应 64 KB、256 KB、1 MB、4 MB。块大小是<strong>编码时写入 frame 头</strong>的，解码时必须按头部声明分配缓冲区；用 <code>-B7</code> 压的文件在只支持 64 KB 块的旧解码器上会报 block size 超限。</p>
+<pre><code class="language-bash">lz4 -B4 -9 big.log big.log.lz4   # 64 KB 块，兼容性最好
+lz4 -B7 big.log big.log.lz4      # 4 MB 块，压缩率略高，老解码器可能拒绝
+lz4 -l big.log big.log.lz4       # legacy 格式，只有 lz4 自己认</code></pre>
+<p>另外 <code>-BD</code> 打开块依赖（默认关闭），会提高压缩率但让随机解压变慢；<code>--content-size</code> 把原始长度写进头部，便于校验，代价是头部多 8 字节。这三项都在 doc/lz4_Frame_format.md 里有明确定义，排查跨机器不一致时优先核对它们。</p>
+<h2>四、浏览器里解的边界</h2>
+<p>在线工具的优势是不装软件，但要看清它是否支持 frame 与 tar.lz4：只支持 frame 的工具遇到 raw block 必然失败。纯前端实现通常用 WASM 或纯 JS 解码，文件不上传，内存与磁盘由浏览器配额决定；超大文件（数 GB）即使在本地解，也可能因为单次 ArrayBuffer 分配失败而中断，这类情况应改用命令行分块处理。需要快速确认文件是不是标准 frame 时，可以用 ez4code.com 的 LZ4 解压页先试一次，失败信息会直接指出是 magic 不对还是块大小超限。</p>
+<h2>五、常见问题</h2>
+<p><strong>Q：为什么 Linux 上 lz4 -d 成功，Windows 上的 7-Zip 却报错？</strong></p>
+<p>7-Zip 的部分版本只认 frame 且不处理 skippable frame；命令行 lz4 会跳过附加段。优先用官方 CLI 或明确标注支持 frame 的工具。</p>
+<p><strong>Q：解压出来的文件比原文件小很多，是不是坏了？</strong></p>
+<p>先确认压缩前是否用 tar 打包（目录会被压成流）。若来源本身是 raw block，解压器可能只吐出了第一块。</p>
+<p><strong>Q：能不能只解压其中一部分？</strong></p>
+<p>Frame 允许块独立（block independence 标志为 1），此时可以从任意块开始解码；若标志为 0，块之间有依赖，必须从头解。</p>
+<h2>六、判断顺序</h2>
+<p>看 magic → 确认 frame 还是 raw block → 确认是否 tar 包了一层 → 比对解压后哈希。四步里任意一步跳过，都会得到「工具坏了」的错误结论。</p>
+      </div>
+      <div class="article-cta">
+        <p>Explore more at <a href="https://ez4code.com">Ez4Code - Programming Tools Platform</a></p>
+        <a href="https://ez4code.com" class="btn">Visit Website</a>
+      </div>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 Ez4Code - Programming Tools Platform. <a href="https://ez4code.com">https://ez4code.com</a></p>
+      <p><a href="https://github.com/niceyayale/ez4code-web">View on GitHub</a></p>
+    </div>
+  </footer>
+</body>
+</html>

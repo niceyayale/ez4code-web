@@ -56,5 +56,16 @@
       "debugging",
       "performance"
     ]
+  },
+  {
+    "title": "LZ4 解压失败怎么排查：Frame、Block 与三种报错的对照表",
+    "slug": "lz4-解压失败怎么排查-frame-block-与三种报错的对照表",
+    "date": "2026-11-18",
+    "description": "",
+    "tags": [
+      "lz4",
+      "compression",
+      "reference"
+    ]
   }
 ]
